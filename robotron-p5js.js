@@ -1,0 +1,678 @@
+// Robotron P5.js Recreation
+// Controls: Arrow keys to move, WASD to shoot
+
+let player;
+let bullets = [];
+let enemies = [];
+let humans = [];
+let score = 0;
+let lives = 3;
+let level = 1;
+let gameOver = false;
+let gameStarted = false;
+
+// Game settings
+const BULLET_SPEED = 8;
+const ENEMY_SPEED = 1.5;
+const GRUNT_SPEED = 1.2;
+const HULK_SPEED = 0.7;
+const BRAIN_SPEED = 0.9;
+const ENFORCER_SPEED = 1.4;
+const TANK_SPEED = 0.8;
+const PLAYER_SPEED = 3.5;
+const SPAWN_RATE = 80; // Lower = more enemies
+const MAX_ENEMIES = 25;
+
+// Colors
+const COLORS = {
+  background: [0, 0, 0],
+  player: [0, 255, 0],
+  bullet: [255, 255, 0],
+  grunt: [255, 0, 0],
+  hulk: [0, 255, 255],
+  brain: [255, 0, 255],
+  enforcer: [255, 128, 0],
+  tank: [255, 255, 255],
+  human: [0, 100, 255],
+  text: [255, 255, 255],
+  grid: [40, 40, 40]
+};
+
+function setup() {
+  createCanvas(800, 600);
+  textAlign(CENTER, CENTER);
+  rectMode(CENTER);
+  
+  player = new Player(width / 2, height / 2);
+  
+  // Initial humans
+  for (let i = 0; i < 5; i++) {
+    humans.push(new Human(
+      random(50, width - 50),
+      random(50, height - 50)
+    ));
+  }
+}
+
+function draw() {
+  // Draw background grid
+  background(COLORS.background);
+  drawGrid();
+  
+  if (!gameStarted) {
+    displayStartScreen();
+    return;
+  }
+  
+  if (gameOver) {
+    displayGameOver();
+    return;
+  }
+  
+  // Game logic
+  handleInput();
+  
+  // Spawn enemies randomly
+  if (frameCount % SPAWN_RATE === 0 && enemies.length < MAX_ENEMIES) {
+    spawnEnemy();
+  }
+  
+  // Update and display all game objects
+  updateBullets();
+  updateEnemies();
+  updateHumans();
+  
+  player.update();
+  player.display();
+  
+  // Display game info
+  displayGameInfo();
+  
+  // Check level completion
+  if (enemies.length === 0 && frameCount % 180 === 0) {
+    nextLevel();
+  }
+}
+
+function displayStartScreen() {
+  fill(COLORS.text);
+  textSize(40);
+  text("ROBOTRON", width / 2, height / 3);
+  
+  textSize(20);
+  text("Arrow keys to MOVE", width / 2, height / 2);
+  text("WASD keys to SHOOT", width / 2, height / 2 + 30);
+  
+  textSize(25);
+  text("Press SPACE to start", width / 2, height / 2 + 80);
+  
+  if (keyIsPressed && key === ' ') {
+    gameStarted = true;
+  }
+}
+
+function displayGameOver() {
+  fill(COLORS.text);
+  textSize(40);
+  text("GAME OVER", width / 2, height / 3);
+  
+  textSize(30);
+  text("Score: " + score, width / 2, height / 2);
+  
+  textSize(20);
+  text("Press R to restart", width / 2, height / 2 + 50);
+  
+  if (keyIsPressed && key === 'r') {
+    restartGame();
+  }
+}
+
+function displayGameInfo() {
+  // Display score at top
+  fill(COLORS.text);
+  textSize(24);
+  text("SCORE: " + score, width / 2, 25);
+  
+  // Display level
+  textSize(18);
+  text("LEVEL: " + level, 60, 25);
+  
+  // Display lives at bottom
+  text("LIVES: " + lives, width / 2, height - 20);
+}
+
+function handleInput() {
+  // Movement with arrow keys
+  player.vel.x = 0;
+  player.vel.y = 0;
+  
+  if (keyIsDown(LEFT_ARROW)) player.vel.x = -PLAYER_SPEED;
+  if (keyIsDown(RIGHT_ARROW)) player.vel.x = PLAYER_SPEED;
+  if (keyIsDown(UP_ARROW)) player.vel.y = -PLAYER_SPEED;
+  if (keyIsDown(DOWN_ARROW)) player.vel.y = PLAYER_SPEED;
+  
+  // Shooting with WASD
+  if (keyIsDown(65)) { // A - left
+    shoot(-1, 0);
+  }
+  if (keyIsDown(68)) { // D - right
+    shoot(1, 0);
+  }
+  if (keyIsDown(87)) { // W - up
+    shoot(0, -1);
+  }
+  if (keyIsDown(83)) { // S - down
+    shoot(0, 1);
+  }
+  
+  // Diagonal shooting
+  if (keyIsDown(87) && keyIsDown(65)) { // W+A - up-left
+    shoot(-1, -1);
+  }
+  if (keyIsDown(87) && keyIsDown(68)) { // W+D - up-right
+    shoot(1, -1);
+  }
+  if (keyIsDown(83) && keyIsDown(65)) { // S+A - down-left
+    shoot(-1, 1);
+  }
+  if (keyIsDown(83) && keyIsDown(68)) { // S+D - down-right
+    shoot(1, 1);
+  }
+}
+
+function shoot(dirX, dirY) {
+  // Limit firing rate
+  if (frameCount % 5 === 0) {
+    const dir = createVector(dirX, dirY).normalize();
+    bullets.push(new Bullet(
+      player.pos.x, 
+      player.pos.y,
+      dir.x * BULLET_SPEED,
+      dir.y * BULLET_SPEED
+    ));
+  }
+}
+
+function updateBullets() {
+  for (let i = bullets.length - 1; i >= 0; i--) {
+    bullets[i].update();
+    bullets[i].display();
+    
+    // Remove bullets that go off-screen
+    if (bullets[i].isOffScreen()) {
+      bullets.splice(i, 1);
+      continue;
+    }
+    
+    // Check for collisions with enemies
+    for (let j = enemies.length - 1; j >= 0; j--) {
+      if (bullets[i] && bullets[i].hits(enemies[j])) {
+        // Different enemy types give different points
+        score += enemies[j].points;
+        
+        // Special handling for Hulks (takes multiple hits)
+        if (enemies[j].type === 'hulk') {
+          enemies[j].health--;
+          if (enemies[j].health <= 0) {
+            enemies.splice(j, 1);
+          }
+        } else {
+          enemies.splice(j, 1);
+        }
+        
+        bullets.splice(i, 1);
+        break;
+      }
+    }
+  }
+}
+
+function updateEnemies() {
+  for (let i = enemies.length - 1; i >= 0; i--) {
+    enemies[i].update();
+    enemies[i].display();
+    
+    // Check for collisions with player
+    if (enemies[i].hits(player)) {
+      loseLife();
+      break;
+    }
+    
+    // Brains can capture humans
+    if (enemies[i].type === 'brain') {
+      for (let j = humans.length - 1; j >= 0; j--) {
+        if (enemies[i].hits(humans[j])) {
+          // Turn human into an enforcer
+          enemies.push(new Enemy(
+            humans[j].pos.x,
+            humans[j].pos.y,
+            'enforcer'
+          ));
+          humans.splice(j, 1);
+          break;
+        }
+      }
+    }
+  }
+}
+
+function updateHumans() {
+  for (let i = humans.length - 1; i >= 0; i--) {
+    humans[i].update();
+    humans[i].display();
+    
+    // Check if player rescues human
+    if (humans[i].hits(player)) {
+      score += 1000; // Bonus for saving human
+      humans.splice(i, 1);
+      
+      // Respawn a human elsewhere if there are few left
+      if (humans.length < 3 && random() < 0.5) {
+        spawnHuman();
+      }
+    }
+  }
+  
+  // Ensure there are always some humans
+  if (humans.length === 0 && random() < 0.03) {
+    spawnHuman();
+  }
+}
+
+function spawnEnemy() {
+  // Spawn off-screen
+  let x, y;
+  if (random() < 0.5) {
+    x = random() < 0.5 ? -20 : width + 20;
+    y = random(height);
+  } else {
+    x = random(width);
+    y = random() < 0.5 ? -20 : height + 20;
+  }
+  
+  // Different types of enemies
+  const types = ['grunt', 'grunt', 'grunt', 'hulk', 'brain', 'enforcer', 'tank'];
+  const type = types[floor(random(types.length))];
+  
+  enemies.push(new Enemy(x, y, type));
+}
+
+function spawnHuman() {
+  // Spawn humans away from the player
+  let x, y;
+  do {
+    x = random(50, width - 50);
+    y = random(50, height - 50);
+  } while (dist(x, y, player.pos.x, player.pos.y) < 150);
+  
+  humans.push(new Human(x, y));
+}
+
+function loseLife() {
+  lives--;
+  
+  // Clear bullets and reposition player
+  bullets = [];
+  player.pos.x = width / 2;
+  player.pos.y = height / 2;
+  
+  // Move enemies away from player
+  for (let enemy of enemies) {
+    const dirFromPlayer = p5.Vector.sub(enemy.pos, player.pos).normalize();
+    enemy.pos.add(p5.Vector.mult(dirFromPlayer, 100));
+  }
+  
+  if (lives <= 0) {
+    gameOver = true;
+  }
+}
+
+function nextLevel() {
+  level++;
+  
+  // Spawn more enemies for higher levels
+  for (let i = 0; i < level * 2; i++) {
+    spawnEnemy();
+  }
+  
+  // Add more humans
+  for (let i = 0; i < min(level, 5); i++) {
+    spawnHuman();
+  }
+}
+
+function restartGame() {
+  player = new Player(width / 2, height / 2);
+  bullets = [];
+  enemies = [];
+  humans = [];
+  score = 0;
+  lives = 3;
+  level = 1;
+  gameOver = false;
+  
+  // Initial humans
+  for (let i = 0; i < 5; i++) {
+    humans.push(new Human(
+      random(50, width - 50),
+      random(50, height - 50)
+    ));
+  }
+}
+
+function drawGrid() {
+  stroke(COLORS.grid[0], COLORS.grid[1], COLORS.grid[2]);
+  strokeWeight(1);
+  
+  // Vertical lines
+  for (let x = 0; x <= width; x += 40) {
+    line(x, 0, x, height);
+  }
+  
+  // Horizontal lines
+  for (let y = 0; y <= height; y += 40) {
+    line(0, y, width, y);
+  }
+  
+  noStroke();
+}
+
+// Classes
+class Player {
+  constructor(x, y) {
+    this.pos = createVector(x, y);
+    this.vel = createVector(0, 0);
+    this.size = 16;
+    this.color = COLORS.player;
+    this.shootingCooldown = 0;
+  }
+  
+  update() {
+    // Move player
+    this.pos.add(this.vel);
+    
+    // Keep player on screen
+    this.pos.x = constrain(this.pos.x, this.size, width - this.size);
+    this.pos.y = constrain(this.pos.y, this.size, height - this.size);
+    
+    // Handle shooting cooldown
+    if (this.shootingCooldown > 0) {
+      this.shootingCooldown--;
+    }
+  }
+  
+  display() {
+    push();
+    fill(this.color);
+    noStroke();
+    
+    // Main body (square with rounded corners)
+    rect(this.pos.x, this.pos.y, this.size, this.size, 3);
+    
+    // Inner detail
+    fill(0);
+    rect(this.pos.x, this.pos.y, this.size / 2, this.size / 2, 1);
+    
+    pop();
+  }
+}
+
+class Bullet {
+  constructor(x, y, vx, vy) {
+    this.pos = createVector(x, y);
+    this.vel = createVector(vx, vy);
+    this.size = 5;
+    this.color = COLORS.bullet;
+  }
+  
+  update() {
+    this.pos.add(this.vel);
+  }
+  
+  display() {
+    fill(this.color);
+    noStroke();
+    rect(this.pos.x, this.pos.y, this.size, this.size);
+  }
+  
+  isOffScreen() {
+    return (
+      this.pos.x < 0 ||
+      this.pos.x > width ||
+      this.pos.y < 0 ||
+      this.pos.y > height
+    );
+  }
+  
+  hits(object) {
+    return dist(this.pos.x, this.pos.y, object.pos.x, object.pos.y) < 
+           (this.size / 2 + object.size / 2);
+  }
+}
+
+class Enemy {
+  constructor(x, y, type) {
+    this.pos = createVector(x, y);
+    this.vel = createVector(0, 0);
+    this.type = type;
+    this.size = 20;
+    this.health = 1;
+    this.points = 100;
+    
+    // Enemy-specific settings
+    switch (this.type) {
+      case 'grunt':
+        this.color = COLORS.grunt;
+        this.speed = GRUNT_SPEED;
+        this.points = 100;
+        break;
+      case 'hulk':
+        this.color = COLORS.hulk;
+        this.speed = HULK_SPEED;
+        this.size = 25;
+        this.health = 3;
+        this.points = 200;
+        break;
+      case 'brain':
+        this.color = COLORS.brain;
+        this.speed = BRAIN_SPEED;
+        this.points = 500;
+        break;
+      case 'enforcer':
+        this.color = COLORS.enforcer;
+        this.speed = ENFORCER_SPEED;
+        this.points = 150;
+        break;
+      case 'tank':
+        this.color = COLORS.tank;
+        this.speed = TANK_SPEED;
+        this.size = 22;
+        this.points = 300;
+        break;
+      default:
+        this.color = COLORS.grunt;
+        this.speed = ENEMY_SPEED;
+        this.points = 100;
+    }
+  }
+  
+  update() {
+    // Enemy AI based on type
+    switch (this.type) {
+      case 'grunt':
+        // Grunts chase the player directly
+        this.chasePlayer();
+        break;
+      case 'hulk':
+        // Hulks move randomly and are harder to kill
+        this.moveRandomly();
+        break;
+      case 'brain':
+        // Brains chase humans
+        this.chaseHumans();
+        break;
+      case 'enforcer':
+        // Enforcers move in patterns and shoot (simplified)
+        this.moveInPattern();
+        break;
+      case 'tank':
+        // Tanks move slowly but are determined
+        this.chasePlayer(0.7);
+        break;
+      default:
+        this.chasePlayer();
+    }
+    
+    this.pos.add(this.vel);
+    
+    // Keep on screen
+    this.pos.x = constrain(this.pos.x, 0, width);
+    this.pos.y = constrain(this.pos.y, 0, height);
+  }
+  
+  display() {
+    push();
+    fill(this.color);
+    noStroke();
+    
+    // Different shapes for different enemies
+    switch (this.type) {
+      case 'grunt':
+        // Square with pattern
+        rect(this.pos.x, this.pos.y, this.size, this.size);
+        fill(0);
+        rect(this.pos.x, this.pos.y, this.size / 2, this.size / 2);
+        break;
+      case 'hulk':
+        // Larger square with inner detail
+        rect(this.pos.x, this.pos.y, this.size, this.size);
+        fill(0);
+        rect(this.pos.x, this.pos.y, this.size * 0.5, this.size * 0.5);
+        break;
+      case 'brain':
+        // Oval shape
+        ellipse(this.pos.x, this.pos.y, this.size, this.size * 1.2);
+        fill(0);
+        ellipse(this.pos.x, this.pos.y - 2, this.size * 0.6, this.size * 0.4);
+        break;
+      case 'enforcer':
+        // Diamond shape
+        translate(this.pos.x, this.pos.y);
+        rotate(PI / 4);
+        rect(0, 0, this.size, this.size);
+        fill(0);
+        rect(0, 0, this.size * 0.4, this.size * 0.4);
+        break;
+      case 'tank':
+        // Rectangle with details
+        rect(this.pos.x, this.pos.y, this.size, this.size);
+        fill(0);
+        rect(this.pos.x, this.pos.y, this.size * 0.7, this.size * 0.3);
+        break;
+      default:
+        rect(this.pos.x, this.pos.y, this.size, this.size);
+    }
+    pop();
+  }
+  
+  chasePlayer(speedMultiplier = 1) {
+    const dir = p5.Vector.sub(player.pos, this.pos).normalize();
+    this.vel = p5.Vector.mult(dir, this.speed * speedMultiplier);
+  }
+  
+  chaseHumans() {
+    // Find closest human
+    let closestHuman = null;
+    let closestDist = Infinity;
+    
+    for (let human of humans) {
+      const d = dist(this.pos.x, this.pos.y, human.pos.x, human.pos.y);
+      if (d < closestDist) {
+        closestDist = d;
+        closestHuman = human;
+      }
+    }
+    
+    if (closestHuman) {
+      const dir = p5.Vector.sub(closestHuman.pos, this.pos).normalize();
+      this.vel = p5.Vector.mult(dir, this.speed);
+    } else {
+      // If no humans, move randomly
+      this.moveRandomly();
+    }
+  }
+  
+  moveRandomly() {
+    if (frameCount % 30 === 0 || this.vel.mag() < 0.1) {
+      this.vel = p5.Vector.random2D().mult(this.speed);
+    }
+  }
+  
+  moveInPattern() {
+    // Simple pattern: move toward player but with some randomness
+    if (frameCount % 45 === 0) {
+      const dir = p5.Vector.sub(player.pos, this.pos).normalize();
+      this.vel = p5.Vector.mult(dir, this.speed);
+      
+      // Add some randomness
+      this.vel.x += random(-1, 1);
+      this.vel.y += random(-1, 1);
+      this.vel.normalize().mult(this.speed);
+    }
+  }
+  
+  hits(object) {
+    return dist(this.pos.x, this.pos.y, object.pos.x, object.pos.y) < 
+           (this.size / 2 + object.size / 2);
+  }
+}
+
+class Human {
+  constructor(x, y) {
+    this.pos = createVector(x, y);
+    this.vel = createVector(0, 0);
+    this.size = 14;
+    this.color = COLORS.human;
+    this.moveTimer = 0;
+  }
+  
+  update() {
+    // Humans move occasionally in random directions
+    if (this.moveTimer <= 0) {
+      if (random() < 0.02) {
+        this.vel = p5.Vector.random2D().mult(random(0.3, 0.7));
+        this.moveTimer = floor(random(30, 90));
+      }
+    } else {
+      this.moveTimer--;
+    }
+    
+    // Move the human
+    this.pos.add(this.vel);
+    
+    // Keep on screen
+    this.pos.x = constrain(this.pos.x, this.size, width - this.size);
+    this.pos.y = constrain(this.pos.y, this.size, height - this.size);
+    
+    // Slow down over time
+    this.vel.mult(0.95);
+  }
+  
+  display() {
+    push();
+    fill(this.color);
+    noStroke();
+    
+    // Human shape (rectangle with small head)
+    rectMode(CENTER);
+    rect(this.pos.x, this.pos.y + 2, this.size * 0.6, this.size * 0.8);
+    ellipse(this.pos.x, this.pos.y - 5, this.size * 0.6, this.size * 0.6);
+    
+    pop();
+  }
+  
+  hits(object) {
+    return dist(this.pos.x, this.pos.y, object.pos.x, object.pos.y) < 
+           (this.size / 2 + object.size / 2);
+  }
+}
